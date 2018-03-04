@@ -63,7 +63,7 @@ payload = {
     "startDate": "2013-03-04",
     "endDate": "2018-03-04",
     "where": {
-        "ticker": ["AAPL"]
+        "ticker": ["FB"]
     }
 }
     
@@ -77,7 +77,7 @@ financialReturns = financialReturns.set_index('date')
 financialReturns.head()
 
 # get Stock Data from IEX¶
-request_url = 'https://api.iextrading.com/1.0/stock/aapl/chart/5y'
+request_url = 'https://api.iextrading.com/1.0/stock/fb/chart/5y'
 request = session.get(url=request_url)
 results = json.loads(request.text)
 stockData = pd.DataFrame(results)
@@ -96,33 +96,44 @@ columns = ['financialReturnsScore','growthScore','integratedScore','multipleScor
 inputs = pd.DataFrame(financials_labeled, columns=columns)
 inputs.dropna(axis=0, how='any', inplace=True)
 
-time_window = range(1,60) # select time window for prediction
+days = 30 # user defined time window (days)
+time_window = range(1,days)
 
-#for n in time_window:
-n = 1
-features = inputs.iloc[::n, :] # every nth day
+val_score = []
 
-labels = pd.DataFrame(features['close'].pct_change())
-labels['close'][0] = 0
-labels.columns = ['change']
-labels[labels['change'] >= 0 ] = 1
-labels[labels['change'] < 0 ] = -1
+for n in time_window:
+    features = inputs.iloc[::n, :] # every nth day
+    
+    labels = pd.DataFrame(features['close'].pct_change())
+    labels['close'][0] = 0
+    labels.columns = ['change']
+    labels[labels['change'] >= 0 ] = 1
+    labels[labels['change'] < 0 ] = -1
+    
+    # normalize features 
+    scaler = StandardScaler()
+    feats_norm = pd.DataFrame(scaler.fit_transform(features), columns = columns)
+    
+    # train SVM classifier
+    c = 0.1 # tune parameters
+    
+    X_train, X_test, y_train, y_test = train_test_split(feats_norm, labels, test_size=0.3, random_state=0)
+    clf = svm.SVC(kernel='rbf', C=c).fit(X_train.as_matrix(), y_train.as_matrix())
+#    print(clf.score(X_test, y_test))
+    ypred = clf.predict(X_test)
+#    print(ypred)
+    
+    # k-fold cross validation
+    k = 5
+    clf = svm.SVC(kernel='rbf', C=c)
+    scores = cross_val_score(clf, feats_norm, labels, cv=k)
+    validation_score = np.mean(scores)
+    val_score.append(validation_score)
+#    print 'Prediction accuracy is', validation_score, 'based on a time-window of', n, 'day(s).' 
 
-# normalize features 
-scaler = StandardScaler()
-feats_norm = pd.DataFrame(scaler.fit_transform(features), columns = columns)
+plt.plot(time_window, val_score)
+plt.title("Stock Prediction Accuracy")
+plt.xlabel('time window (days)')
+plt.ylabel('accuracy')
 
-# train SVM classifier
-c = 0.1 # tune parameters
-X_train, X_test, y_train, y_test = train_test_split(feats_norm, labels, test_size=0.3, random_state=0)
-clf = svm.SVC(kernel='rbf', C=c).fit(X_train.as_matrix(), y_train.as_matrix())
-print(clf.score(X_test, y_test))
-ypred = clf.predict(X_test)
-print(ypred)
-
-clf = svm.SVC(kernel='rbf', C=c)
-scores = cross_val_score(clf, feats_norm, labels, cv=5)
-validation_score = np.mean(scores)
-
-print(validation_score)
 
